@@ -31,6 +31,10 @@ jobs:
           - id: "linux-riscv64"
             os: "ubuntu-24.04"
 
+          - id: "linux-amd64-musl"
+            os: "ubuntu-latest"
+            container: "alpine:3.23"
+
           - id: "darwin-amd64"
             os: "macos-15-intel"
 
@@ -42,23 +46,23 @@ jobs:
             tar_extra_args: "--dereference" # On Windows, symlinks require existing targets, so archives may fail. Dereferencing stores copies instead, slightly increasing size but ensuring reliable unpacking.
 
     runs-on: ${{ matrix.target.os }}
+    container: ${{ matrix.target.container }}
 
     steps:
       - name: Check out the code
         uses: actions/checkout@v6
 
-      - name: Free Disk Space (Linux)
-        if: startsWith(matrix.target.id, 'linux-')
+      - name: Install dependencies (musl)
+        if: matrix.target.id == 'linux-amd64-musl'
         run: |
-          set -e
+          apk add --no-cache \
+            build-base bash git cmake ninja python3 linux-headers \
+            zlib-dev curl-dev libffi-dev
 
-          echo "Initial disk usage:"
-          df -h
-
-          echo "Pruning Docker"
+      - name: Free Disk Space (Linux glibc only)
+        if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-amd64-musl'
+        run: |
           sudo docker system prune --all --force --volumes || true
-
-          echo "Removing language SDKs and toolchains"
           sudo rm -rf \
             /usr/share/dotnet \
             /usr/local/lib/android \
@@ -69,35 +73,24 @@ jobs:
             /home/runner/.cabal \
             /usr/share/swift \
             /usr/share/miniconda \
-            /usr/local/julia
-
-          echo "Removing cloud / vendor tools"
-          sudo rm -rf \
+            /usr/local/julia \
             /usr/share/az* \
             /usr/local/aws-cli \
             /usr/local/aws-sam-cli \
             /usr/local/share/powershell \
-            /usr/local/share/chromium
-
-          echo "Removing Node / Gradle caches"
-          sudo rm -rf \
+            /usr/local/share/chromium \
             /usr/local/lib/node_modules \
-            /usr/share/gradle
+            /usr/share/gradle \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
 
-          echo "Removing tool cache"
-          sudo rm -rf "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"
-
-          echo "Final disk usage:"
-          df -h
-
-      - name: Maximize Swap Space
-        if: startsWith(matrix.target.id, 'linux-')
+      - name: Maximize Swap Space (glibc only)
+        if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-amd64-musl'
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 5
 
-      - name: Install `ninja` (Linux)
-        if: startsWith(matrix.target.id, 'linux-')
+      - name: Install ninja (Linux glibc)
+        if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-amd64-musl'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
@@ -105,11 +98,12 @@ jobs:
       - name: Install cross-compilation tools (RISCV)
         if: matrix.target.id == 'linux-riscv64'
         run: |
-          sudo apt-get install gcc-13-riscv64-linux-gnu g++-13-riscv64-linux-gnu \
-          gcc-13-multilib binutils-riscv64-linux-gnu libgcc-13-dev-riscv64-cross \
-          libstdc++6-riscv64-cross -y
+          sudo apt-get install -y \
+            gcc-13-riscv64-linux-gnu g++-13-riscv64-linux-gnu \
+            gcc-13-multilib binutils-riscv64-linux-gnu \
+            libgcc-13-dev-riscv64-cross libstdc++6-riscv64-cross
 
-      - name: Install `ninja` (macOS)
+      - name: Install ninja (macOS)
         if: startsWith(matrix.target.id, 'darwin-')
         run: command -v ninja >/dev/null || brew install ninja
 
@@ -117,30 +111,38 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         if: matrix.target.id == 'windows-amd64'
 
-      - name: Build
+      - name: Build (non-Windows)
         if: matrix.target.id != 'windows-amd64'
         shell: bash
         run: |
-          ./build.sh ${{ matrix.llvm_version }} ${{ env.LLVM_REPO_URL }} ${{ matrix.target.id }} ${{ matrix.llvm_build_type }}
+          ./build.sh \
+            ${{ matrix.llvm_version }} \
+            ${{ env.LLVM_REPO_URL }} \
+            ${{ matrix.target.id }} \
+            ${{ matrix.llvm_build_type }}
 
       - name: Build (Windows)
         if: matrix.target.id == 'windows-amd64'
         run: |
           ./build.ps1 ${{ matrix.llvm_version }} ${{ env.LLVM_REPO_URL }} ${{ matrix.llvm_build_type }}
 
-      - name: Zip
+      - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          ASSET_SUFFIX=""
-          if [ "${{ matrix.llvm_build_type }}" == "Debug" ]; then ASSET_SUFFIX="-dbg"; fi
-          #tar --directory llvm-project/build/destdir --create --xz --verbose ${{ matrix.target.tar_extra_args }} --file dist/llvm${ASSET_SUFFIX}.tar.xz .
-          tar --directory llvm-project/build/destdir --create --gzip --verbose ${{ matrix.target.tar_extra_args }} --file dist/llvm${ASSET_SUFFIX}.tar.gz .
+          SUFFIX=""
+          if [ "${{ matrix.llvm_build_type }}" = "Debug" ]; then
+            SUFFIX="-dbg"
+          fi
+          tar --directory llvm-project/build/destdir \
+              --create --gzip --verbose \
+              ${{ matrix.target.tar_extra_args }} \
+              --file dist/llvm${SUFFIX}.tar.gz .
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.target.id }}-${{ matrix.llvm_version }}-${{ matrix.llvm_build_type }}
+          name: ${{ matrix.target.id }}__${{ matrix.llvm_version }}__${{ matrix.llvm_build_type }}
           path: dist
           if-no-files-found: error
           retention-days: 1
@@ -162,11 +164,15 @@ jobs:
           mkdir -p release_dist
           for dir in artifacts/*; do
             dirname=$(basename "$dir")
-            id=$(echo "$dirname" | cut -d'-' -f1,2)
-            type=$(echo "$dirname" | rev | cut -d'-' -f1 | rev)
+            # Parse the directory name: <ID>__<VERSION>__<TYPE>
+            type=${dirname##*__}
+            remainder=${dirname%__*}
+            version=${remainder##*__}
+            id=${remainder%__*}
             suffix=""
-            if [ "$type" == "Debug" ]; then suffix="-dbg"; fi
-
+            if [ "$type" = "Debug" ]; then
+              suffix="-dbg"
+            fi
             FILE=$(find "$dir" -name "*.tar.gz" | head -n 1)
             if [ -n "$FILE" ]; then
               cp "$FILE" "release_dist/llvm-${id}${suffix}.tar.gz"

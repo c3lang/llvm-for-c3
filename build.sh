@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Display all commands before executing them.
 set -o errexit
 set -o errtrace
 
@@ -11,13 +10,13 @@ LLVM_CROSS="$3"
 if [[ -z "$LLVM_REPO_URL" || -z "$LLVM_VERSION" ]]
 then
   echo "Usage: $0 <llvm-version> <llvm-repository-url> [aarch64/riscv64]"
-  echo
-  echo "# Arguments"
-  echo "  llvm-version         The name of a LLVM release branch without the 'release/' prefix"
-  echo "  llvm-repository-url  The URL used to clone LLVM sources (default: https://github.com/llvm/llvm-project.git)"
-  echo "  aarch64 / riscv64    To cross-compile an aarch64/riscv64 version of LLVM"
-
   exit 1
+fi
+
+# Detect musl build
+STATIC_BUILD=""
+if [[ "$LLVM_CROSS" == *musl* ]]; then
+  STATIC_BUILD="ON"
 fi
 
 # Clone the LLVM project.
@@ -51,7 +50,7 @@ fi
 # Adjust cross-compilation (Only RISC-V requires cross-compiling on current CI runners)
 CROSS_COMPILE=""
 TARGET_TRIPLE=""
-if [[ "$3" == *riscv64* ]]; then
+if [[ "$LLVM_CROSS" == *riscv64* ]]; then
     TARGET_TRIPLE="riscv64-linux-gnu"
     CROSS_COMPILE="-DLLVM_HOST_TRIPLE=$TARGET_TRIPLE -DCMAKE_C_COMPILER=riscv64-linux-gnu-gcc-13 -DCMAKE_CXX_COMPILER=riscv64-linux-gnu-g++-13 -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=riscv64"
 fi
@@ -92,8 +91,6 @@ cmake \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64;RISCV;WebAssembly;LoongArch;ARM" \
   -DLLVM_INCLUDE_DOCS=OFF \
   -DLLVM_BUILD_TESTS=OFF \
-  -DLLVM_BUILD_LLVM_DYLIB=ON \
-  -DLLVM_LINK_LLVM_DYLIB=ON \
   -DLLVM_ENABLE_ASSERTIONS="${ENABLE_ASSERTIONS}" \
   -DLLVM_INCLUDE_EXAMPLES=OFF \
   -DLLVM_INCLUDE_TESTS=OFF \
@@ -106,6 +103,7 @@ cmake \
   -DLLVM_ENABLE_CURL=OFF \
   -DLLVM_ENABLE_BINDINGS=OFF \
   -DLLVM_OPTIMIZED_TABLEGEN="${OPTIMIZED_TABLEGEN}" \
+  $(if [[ "$STATIC_BUILD" == "ON" ]]; then echo "-DBUILD_SHARED_LIBS=OFF -DLLVM_BUILD_LLVM_DYLIB=OFF -DLLVM_LINK_LLVM_DYLIB=OFF -DCMAKE_EXE_LINKER_FLAGS=-static"; else echo "-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON"; fi) \
   ${CROSS_COMPILE} \
   ${PARALLEL_LINK_FLAGS} \
   ${CMAKE_ARGUMENTS} \
@@ -113,22 +111,12 @@ cmake \
 
 cmake --build . --config "${BUILD_TYPE}" ${BUILD_PARALLEL_FLAGS}
 
-# Save some disk space
-echo "Initial disk usage:"
-df -h
 find . -name "*.o" -type f -delete || true
 find . -name "*.dwo" -type f -delete || true
-echo "Before install disk usage:"
-df -h
 
 DESTDIR=destdir cmake --install . --config "${BUILD_TYPE}"
 
-echo "After install disk usage:"
-df -h
-echo "Cleaning up Phase 1 to make room for Phase 2..."
 find . -maxdepth 1 ! -name 'destdir' ! -name 'bin' ! -name 'lib' ! -name '.' -exec rm -rf {} + || true
-echo "Disk usage before Phase 2:"
-df -h
 
 # -- PHASE 2: Build compiler-rt (Builtins & Sanitizers) --
 
@@ -136,15 +124,13 @@ df -h
 # Locate llvm-config inside the destdir (it might be in /bin or /usr/bin)
 LLVM_CONFIG_PATH=$(find "$(pwd)/destdir" -name llvm-config -type f | head -n 1)
 if [[ -z "$LLVM_CONFIG_PATH" ]]; then
-  echo "Error: Could not find llvm-config in destdir"
+  echo "Error: Could not find llvm-config"
   exit 1
 fi
-echo "Found llvm-config at: $LLVM_CONFIG_PATH"
 
-# Locate the LLVM CMake directory inside destdir
 LLVM_CMAKE_DIR_PATH=$(find "$(pwd)/destdir" -name LLVMConfig.cmake -type f -exec dirname {} + | head -n 1)
 if [[ -z "$LLVM_CMAKE_DIR_PATH" ]]; then
-  echo "Error: Could not find LLVMConfig.cmake in destdir"
+  echo "Error: Could not find LLVMConfig.cmake"
   exit 1
 fi
 echo "Found LLVM CMake dir at: $LLVM_CMAKE_DIR_PATH"
@@ -153,14 +139,13 @@ echo "Found LLVM CMake dir at: $LLVM_CMAKE_DIR_PATH"
 # Skip running llvm-config if cross-compiling to avoid Exec format errors.
 LLVM_LIB_DIR=$(find "$(pwd)/destdir" -name "lib" -type d | head -n 1)
 
-# Tell the OS where to find libLLVM.so so llvm-config can f... run
+# Tell the OS where to find libLLVM.so so llvm-config can run
 if [[ "${OSTYPE}" == linux* ]]; then
   export LD_LIBRARY_PATH="$LLVM_LIB_DIR:$LD_LIBRARY_PATH"
 elif [[ "${OSTYPE}" == darwin* ]]; then
   export DYLD_LIBRARY_PATH="$LLVM_LIB_DIR:$DYLD_LIBRARY_PATH"
 fi
-#HOST_TRIPLE=${TARGET_TRIPLE:-$(./bin/llvm-config --host-target)}
-#HOST_TRIPLE=${TARGET_TRIPLE:-$(../build/destdir/bin/llvm-config --host-target)}
+
 HOST_TRIPLE=${TARGET_TRIPLE:-$($LLVM_CONFIG_PATH --host-target)}
 echo "Host Triple: $HOST_TRIPLE"
 
@@ -172,7 +157,7 @@ cmake \
   -DLLVM_CMAKE_DIR="$LLVM_CMAKE_DIR_PATH" \
   -DCMAKE_C_COMPILER_TARGET="${HOST_TRIPLE}" \
   -DCOMPILER_RT_BUILD_BUILTINS=ON \
-  -DCOMPILER_RT_BUILD_SANITIZERS=ON \
+  $(if [[ "$STATIC_BUILD" == "ON" ]]; then echo "-DCOMPILER_RT_BUILD_SANITIZERS=OFF"; else echo "-DCOMPILER_RT_BUILD_SANITIZERS=ON"; fi) \
   -DCOMPILER_RT_BUILD_XRAY=OFF \
   -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
   -DCOMPILER_RT_BUILD_PROFILE=OFF \
