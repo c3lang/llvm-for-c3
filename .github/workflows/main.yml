@@ -98,10 +98,21 @@ jobs:
       - name: Install cross-compilation tools (RISCV)
         if: matrix.target.id == 'linux-riscv64'
         run: |
+          sudo dpkg --add-architecture riscv64
+          find /etc/apt/ -type f -name "*.list" -o -name "sources.list" | xargs -r grep -l "^deb " | xargs -r sudo sed -i -E "s/^deb\s+([^\[])/deb [arch=$(dpkg --print-architecture)] \1/"
+          find /etc/apt/sources.list.d/ -type f -name "*.sources" | xargs -r sudo sed -i "/^Types: deb/a Architectures: $(dpkg --print-architecture)"
+
+          # Add the RISC-V ports mirror
+          echo "deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble main universe restricted multiverse" | sudo tee /etc/apt/sources.list.d/riscv64.list
+          echo "deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble-updates main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/riscv64.list
+          echo "deb [arch=riscv64] http://ports.ubuntu.com/ubuntu-ports noble-security main universe restricted multiverse" | sudo tee -a /etc/apt/sources.list.d/riscv64.list
+
+          sudo apt-get update
           sudo apt-get install -y \
             gcc-13-riscv64-linux-gnu g++-13-riscv64-linux-gnu \
             gcc-13-multilib binutils-riscv64-linux-gnu \
-            libgcc-13-dev-riscv64-cross libstdc++6-riscv64-cross
+            libgcc-13-dev-riscv64-cross libstdc++6-riscv64-cross \
+            zlib1g-dev:riscv64 libzstd-dev:riscv64
 
       - name: Install ninja (macOS)
         if: startsWith(matrix.target.id, 'darwin-')
