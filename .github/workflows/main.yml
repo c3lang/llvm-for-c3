@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  LLVM_VERSION: "22.x"
+  LLVM_VERSION: "main"
   LLVM_REPO_URL: "https://github.com/llvm/llvm-project.git"
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        llvm_version: ["22.x"]
+        llvm_version: ["main"]
         llvm_build_type: ["Release", "Debug"]
         target:
           - id: "linux-amd64"
