@@ -57,7 +57,7 @@ jobs:
         run: |
           apk add --no-cache \
             build-base bash git cmake ninja python3 linux-headers \
-            zlib-dev zlib-static zstd-dev zstd-static curl-dev libffi-dev
+            zlib-dev zlib-static zstd-dev zstd-static curl-dev libffi-dev xz
 
       - name: Free Disk Space (Linux glibc only)
         if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-amd64-musl'
@@ -122,8 +122,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         if: matrix.target.id == 'windows-amd64'
 
-      - name: Build (non-Windows)
-        if: matrix.target.id != 'windows-amd64'
+      - name: Build
         shell: bash
         run: |
           ./build.sh \
@@ -132,23 +131,11 @@ jobs:
             ${{ matrix.target.id }} \
             ${{ matrix.llvm_build_type }}
 
-      - name: Build (Windows)
-        if: matrix.target.id == 'windows-amd64'
-        run: |
-          ./build.ps1 ${{ matrix.llvm_version }} ${{ env.LLVM_REPO_URL }} ${{ matrix.llvm_build_type }}
-
       - name: Package
         shell: bash
         run: |
-          mkdir -p dist
-          SUFFIX=""
-          if [ "${{ matrix.llvm_build_type }}" = "Debug" ]; then
-            SUFFIX="-dbg"
-          fi
-          tar --directory llvm-project/build/destdir \
-              --create --gzip --verbose \
-              ${{ matrix.target.tar_extra_args }} \
-              --file dist/llvm${SUFFIX}.tar.gz .
+          ./package.sh "${{ matrix.llvm_build_type }}" "tar.gz" "${{ matrix.target.tar_extra_args }}"
+          ./package.sh "${{ matrix.llvm_build_type }}" "tar.xz" "${{ matrix.target.tar_extra_args }}"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
@@ -184,10 +171,12 @@ jobs:
             if [ "$type" = "Debug" ]; then
               suffix="-dbg"
             fi
-            FILE=$(find "$dir" -name "*.tar.gz" | head -n 1)
-            if [ -n "$FILE" ]; then
-              cp "$FILE" "release_dist/llvm-${id}${suffix}.tar.gz"
-            fi
+            for FILE in "$dir"/*.tar.*; do
+              if [ -f "$FILE" ]; then
+                ext="${FILE##*.tar.}"
+                cp "$FILE" "release_dist/llvm-${id}${suffix}.tar.${ext}"
+              fi
+            done
           done
 
       - name: Create and Upload Release
@@ -197,6 +186,6 @@ jobs:
         with:
           name: LLVM ${{ env.LLVM_VERSION }}
           tag_name: ${{ github.ref_name }}
-          files: release_dist/*.tar.gz
+          files: release_dist/*.tar.*
           draft: true
           prerelease: true
