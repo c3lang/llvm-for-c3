@@ -57,7 +57,7 @@ jobs:
         run: |
           apk add --no-cache \
             build-base bash git cmake ninja python3 linux-headers \
-            zlib-dev zlib-static zstd-dev zstd-static curl-dev libffi-dev
+            zlib-dev zlib-static zstd-dev zstd-static curl-dev libffi-dev xz
 
       - name: Free Disk Space (Linux glibc only)
         if: startsWith(matrix.target.id, 'linux-') && matrix.target.id != 'linux-amd64-musl'
