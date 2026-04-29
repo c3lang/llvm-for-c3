@@ -140,15 +140,8 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          mkdir -p dist
-          SUFFIX=""
-          if [ "${{ matrix.llvm_build_type }}" = "Debug" ]; then
-            SUFFIX="-dbg"
-          fi
-          tar --directory llvm-project/build/destdir \
-              --create --gzip --verbose \
-              ${{ matrix.target.tar_extra_args }} \
-              --file dist/llvm${SUFFIX}.tar.gz .
+          ./package.sh "${{ matrix.llvm_build_type }}" "tar.gz" "${{ matrix.target.tar_extra_args }}"
+          ./package.sh "${{ matrix.llvm_build_type }}" "tar.xz" "${{ matrix.target.tar_extra_args }}"
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v6
@@ -184,10 +177,12 @@ jobs:
             if [ "$type" = "Debug" ]; then
               suffix="-dbg"
             fi
-            FILE=$(find "$dir" -name "*.tar.gz" | head -n 1)
-            if [ -n "$FILE" ]; then
-              cp "$FILE" "release_dist/llvm-${id}${suffix}.tar.gz"
-            fi
+            for FILE in "$dir"/*.tar.*; do
+              if [ -f "$FILE" ]; then
+                ext="${FILE##*.tar.}"
+                cp "$FILE" "release_dist/llvm-${id}${suffix}.tar.${ext}"
+              fi
+            done
           done
 
       - name: Create and Upload Release
@@ -197,6 +192,6 @@ jobs:
         with:
           name: LLVM ${{ env.LLVM_VERSION }}
           tag_name: ${{ github.ref_name }}
-          files: release_dist/*.tar.gz
+          files: release_dist/*.tar.*
           draft: true
           prerelease: true
