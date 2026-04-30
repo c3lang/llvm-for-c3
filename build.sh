@@ -109,6 +109,9 @@ if [[ "$OS_TYPE" == "windows" ]]; then
   CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DLLVM_ENABLE_TERMINFO=OFF"
 fi
 
+# Enable LLVM Driver to save space by merging multiple tools into one binary
+CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DLLVM_TOOL_LLVM_DRIVER_BUILD=ON"
+
 df -h
 
 # -- PHASE 1: Build LLVM + LLD --
