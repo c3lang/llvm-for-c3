@@ -122,8 +122,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         if: matrix.target.id == 'windows-amd64'
 
-      - name: Build (non-Windows)
-        if: matrix.target.id != 'windows-amd64'
+      - name: Build
         shell: bash
         run: |
           ./build.sh \
@@ -131,11 +130,6 @@ jobs:
             ${{ env.LLVM_REPO_URL }} \
             ${{ matrix.target.id }} \
             ${{ matrix.llvm_build_type }}
-
-      - name: Build (Windows)
-        if: matrix.target.id == 'windows-amd64'
-        run: |
-          ./build.ps1 ${{ matrix.llvm_version }} ${{ env.LLVM_REPO_URL }} ${{ matrix.llvm_build_type }}
 
       - name: Package
         shell: bash

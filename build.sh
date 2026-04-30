@@ -13,6 +13,14 @@ then
   exit 1
 fi
 
+# Detect OS
+OS_TYPE="unknown"
+case "${OSTYPE}" in
+  linux*)   OS_TYPE="linux" ;;
+  darwin*)  OS_TYPE="darwin" ;;
+  msys*|cygwin*) OS_TYPE="windows" ;;
+esac
+
 # Detect musl build
 STATIC_BUILD=""
 if [[ "$LLVM_CROSS" == *musl* ]]; then
@@ -39,15 +47,41 @@ git fetch origin
 git checkout "$LLVM_REF"
 git reset --hard "$LLVM_REF"
 
+# Apply pdb-patch (Windows-only, only for non-Release builds)
+if [[ "$OS_TYPE" == "windows" && "$4" == "Debug" ]]; then
+    echo "Applying PDB patch for Windows Debug build..."
+    PDB_PATCH='
+	get_target_property(type ${name} TYPE)
+	if(${type} STREQUAL "STATIC_LIBRARY")
+		set(pdb_dir ${CMAKE_CURRENT_BINARY_DIR}/pdb)
+		set_target_properties(
+			${name}
+			PROPERTIES
+			COMPILE_PDB_NAME_DEBUG ${name}
+			COMPILE_PDB_OUTPUT_DIRECTORY_DEBUG ${pdb_dir}
+			)
+		install(
+			FILES ${pdb_dir}/${name}.pdb
+			CONFIGURATIONS Debug
+			DESTINATION lib${LLVM_LIBDIR_SUFFIX}
+			OPTIONAL
+			)
+	endif()
+'
+    export PDB_PATCH
+    perl -i -0777 -pe 's/endmacro\s*\(add_llvm_library\)/$ENV{PDB_PATCH}\nendmacro(add_llvm_library)/g' llvm/cmake/modules/AddLLVM.cmake
+fi
+
 # Create directories
 mkdir -p build
 mkdir -p build_rt
 
 # Adjust compilation based on build type
-BUILD_TYPE=$4
-if [[ -z "$BUILD_TYPE" ]]; then
-  BUILD_TYPE="Release"
+BUILD_TYPE_SPECIFIED=$4
+if [[ -z "$BUILD_TYPE_SPECIFIED" ]]; then
+  BUILD_TYPE_SPECIFIED="Release"
 fi
+BUILD_TYPE=$BUILD_TYPE_SPECIFIED
 
 # Adjust cross-compilation (Only RISC-V requires cross-compiling on current CI runners)
 CROSS_COMPILE=""
@@ -67,14 +101,12 @@ CMAKE_ARGUMENTS=""
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   BUILD_TYPE="Release"
   ENABLE_ASSERTIONS="ON"
+fi
 
-  # if [[ "${OSTYPE}" == linux* ]]; then
-  #   # Grouped Linux-specific Debug optimizations to save memory on CI
-  #   CMAKE_ARGUMENTS="-DLLVM_USE_SPLIT_DWARF=ON"
-  #   #OPTIMIZED_TABLEGEN="OFF"
-  #   PARALLEL_LINK_FLAGS="-DLLVM_PARALLEL_LINK_JOBS=2"
-  #   BUILD_PARALLEL_FLAGS="--parallel 2"
-  # fi
+if [[ "$OS_TYPE" == "windows" ]]; then
+  # Windows-specific flags matching build.ps1
+  CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded\$<\$<CONFIG:Debug>:Debug>"
+  CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DLLVM_ENABLE_TERMINFO=OFF"
 fi
 
 df -h
@@ -88,8 +120,8 @@ cmake \
   -DCMAKE_INSTALL_PREFIX="/" \
   -DLLVM_ENABLE_PROJECTS="lld" \
   -DLLVM_ENABLE_RUNTIMES="" \
-  -DLLVM_ENABLE_ZLIB=FORCE_ON \
-  -DLLVM_ENABLE_ZSTD=FORCE_ON \
+  -DLLVM_ENABLE_ZLIB=$([[ "$OS_TYPE" == "windows" ]] && echo "OFF" || echo "FORCE_ON") \
+  -DLLVM_ENABLE_ZSTD=$([[ "$OS_TYPE" == "windows" ]] && echo "OFF" || echo "FORCE_ON") \
   $(if [[ "$STATIC_BUILD" == "ON" ]]; then echo "-DZLIB_LIBRARY=/usr/lib/libz.a -DZLIB_INCLUDE_DIR=/usr/include -Dzstd_LIBRARY=/usr/lib/libzstd.a -Dzstd_INCLUDE_DIR=/usr/include"; fi) \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64;RISCV;WebAssembly;LoongArch;ARM;AVR;" \
   -DLLVM_INCLUDE_DOCS=OFF \
@@ -125,7 +157,7 @@ find . -maxdepth 1 ! -name 'destdir' ! -name 'bin' ! -name 'lib' ! -name '.' -ex
 
 # --- AUTO-DISCOVERY ---
 # Locate llvm-config inside the destdir (it might be in /bin or /usr/bin)
-LLVM_CONFIG_PATH=$(find "$(pwd)/destdir" -name llvm-config -type f | head -n 1)
+LLVM_CONFIG_PATH=$(find "$(pwd)/destdir" -name "llvm-config*" -type f | head -n 1)
 if [[ -z "$LLVM_CONFIG_PATH" ]]; then
   echo "Error: Could not find llvm-config"
   exit 1
@@ -143,10 +175,12 @@ echo "Found LLVM CMake dir at: $LLVM_CMAKE_DIR_PATH"
 LLVM_LIB_DIR=$(find "$(pwd)/destdir" -name "lib" -type d | head -n 1)
 
 # Tell the OS where to find libLLVM.so so llvm-config can run
-if [[ "${OSTYPE}" == linux* ]]; then
+if [[ "$OS_TYPE" == "linux" ]]; then
   export LD_LIBRARY_PATH="$LLVM_LIB_DIR:$LD_LIBRARY_PATH"
-elif [[ "${OSTYPE}" == darwin* ]]; then
+elif [[ "$OS_TYPE" == "darwin" ]]; then
   export DYLD_LIBRARY_PATH="$LLVM_LIB_DIR:$DYLD_LIBRARY_PATH"
+elif [[ "$OS_TYPE" == "windows" ]]; then
+  export PATH="$LLVM_LIB_DIR:$PATH"
 fi
 
 HOST_TRIPLE=${TARGET_TRIPLE:-$($LLVM_CONFIG_PATH --host-target)}
@@ -181,6 +215,15 @@ df -h
 
 # Install to the same destdir as LLVM
 DESTDIR=../build/destdir cmake --install . --config "${BUILD_TYPE}"
+
+# -- PHASE 3: Post-processing (Stripping) --
+if [[ "$BUILD_TYPE_SPECIFIED" == "Release" && "$OS_TYPE" != "windows" ]]; then
+  echo "Stripping binaries and libraries to save space..."
+  # Strip executables (using find to avoid issues with long argument lists)
+  find ../build/destdir -type f -executable -exec strip --strip-all {} + || true
+  # Strip static libraries
+  find ../build/destdir -name "*.a" -exec strip --strip-unneeded {} + || true
+fi
 
 echo "Final Disk Usage:"
 df -h
