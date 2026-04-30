@@ -158,7 +158,8 @@ cmake --build . --config "${BUILD_TYPE}" ${BUILD_PARALLEL_FLAGS}
 find . -name "*.o" -type f -delete || true
 find . -name "*.dwo" -type f -delete || true
 
-DESTDIR=destdir cmake --install . --config "${BUILD_TYPE}"
+# Install to the local destdir folder for packaging
+cmake --install . --config "${BUILD_TYPE}" --prefix "destdir"
 
 find . -maxdepth 1 ! -name 'destdir' ! -name 'bin' ! -name 'lib' ! -name '.' -exec rm -rf {} + || true
 
@@ -223,7 +224,7 @@ echo "Installing compiler-rt..."
 df -h
 
 # Install to the same destdir as LLVM
-DESTDIR=../build/destdir cmake --install . --config "${BUILD_TYPE}"
+cmake --install . --config "${BUILD_TYPE}" --prefix "../build/destdir"
 
 # -- PHASE 3: Post-processing (Stripping) --
 if [[ "$BUILD_TYPE_SPECIFIED" == "Release" && "$OS_TYPE" != "windows" ]]; then
