@@ -159,8 +159,8 @@ find . -maxdepth 1 ! -name 'destdir' ! -name 'bin' ! -name 'lib' ! -name '.' -ex
 # -- PHASE 2: Build compiler-rt (Builtins & Sanitizers) --
 
 # --- AUTO-DISCOVERY ---
-# Locate llvm-config inside the destdir (it might be in /bin or /usr/bin)
-LLVM_CONFIG_PATH=$(find "$(pwd)/destdir" -name "llvm-config*" -type f | head -n 1)
+# Locate llvm-config inside the destdir (looking specifically in bin directories to avoid headers)
+LLVM_CONFIG_PATH=$(find "$(pwd)/destdir" -path "*/bin/llvm-config*" -type f | head -n 1)
 if [[ -z "$LLVM_CONFIG_PATH" ]]; then
   echo "Error: Could not find llvm-config"
   exit 1
@@ -186,7 +186,7 @@ elif [[ "$OS_TYPE" == "windows" ]]; then
   export PATH="$LLVM_LIB_DIR:$PATH"
 fi
 
-HOST_TRIPLE=${TARGET_TRIPLE:-$($LLVM_CONFIG_PATH --host-target)}
+HOST_TRIPLE=${TARGET_TRIPLE:-$("$LLVM_CONFIG_PATH" --host-target)}
 echo "Host Triple: $HOST_TRIPLE"
 
 cd ../build_rt
