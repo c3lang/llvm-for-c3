@@ -153,19 +153,6 @@ find . -name "*.dwo" -type f -delete || true
 # Install to the local destdir folder for packaging
 cmake --install . --config "${BUILD_TYPE}" --prefix "destdir"
 
-# Fix diaguids.lib absolute path in installed cmake exports (Windows-only)
-if [[ "$OS_TYPE" == "windows" ]]; then
-    echo "Patching LLVMExports.cmake to use relative diaguids.lib path..."
-    EXPORTS_FILE=$(find destdir -name "LLVMExports.cmake" | head -1)
-    if [[ -n "$EXPORTS_FILE" ]]; then
-        perl -i -pe 's|[A-Z]:[^";]*diaguids\.lib|diaguids.lib|g' "$EXPORTS_FILE"
-        echo "Patched: $EXPORTS_FILE"
-        grep "diaguids" "$EXPORTS_FILE" || echo "(no diaguids reference remaining - good)"
-    else
-        echo "WARNING: LLVMExports.cmake not found in destdir"
-    fi
-fi
-
 find . -maxdepth 1 ! -name 'destdir' ! -name 'bin' ! -name 'lib' ! -name '.' -exec rm -rf {} + || true
 
 # -- PHASE 2: Build compiler-rt (Builtins & Sanitizers) --
