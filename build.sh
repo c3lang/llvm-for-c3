@@ -121,8 +121,8 @@ cmake \
   -DCMAKE_INSTALL_PREFIX="/" \
   -DLLVM_ENABLE_PROJECTS="lld" \
   -DLLVM_ENABLE_RUNTIMES="" \
-  -DLLVM_ENABLE_ZLIB=$([[ "$OS_TYPE" == "windows" ]] && echo "OFF" || echo "FORCE_ON") \
-  -DLLVM_ENABLE_ZSTD=$([[ "$OS_TYPE" == "windows" ]] && echo "OFF" || echo "FORCE_ON") \
+  -DLLVM_ENABLE_ZLIB=$([[ "$OS_TYPE" == "windows" || "$OS_TYPE" == "darwin" ]] && echo "OFF" || echo "FORCE_ON") \
+  -DLLVM_ENABLE_ZSTD=$([[ "$OS_TYPE" == "windows" || "$OS_TYPE" == "darwin" ]] && echo "OFF" || echo "FORCE_ON") \
   $(if [[ "$STATIC_BUILD" == "ON" ]]; then echo "-DZLIB_LIBRARY=/usr/lib/libz.a -DZLIB_INCLUDE_DIR=/usr/include -Dzstd_LIBRARY=/usr/lib/libzstd.a -Dzstd_INCLUDE_DIR=/usr/include"; fi) \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64;RISCV;WebAssembly;LoongArch;ARM;AVR;" \
   -DLLVM_INCLUDE_DOCS=OFF \
