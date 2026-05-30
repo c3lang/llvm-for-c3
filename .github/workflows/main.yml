@@ -119,7 +119,9 @@ jobs:
         run: command -v ninja >/dev/null || brew install ninja
 
       - name: Setup MSVC (Windows)
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
         if: matrix.target.id == 'windows-amd64'
 
       - name: Build

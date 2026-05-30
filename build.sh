@@ -112,6 +112,40 @@ fi
 
 df -h
 
+ZLIB_DIR=""
+if [[ "$OS_TYPE" == "windows" ]]; then
+  echo "Downloading and building static zlib for Windows LLVM build..."
+  # Fetch latest release source tarball URL
+  ZLIB_URL=$(curl -s https://api.github.com/repos/madler/zlib/releases/latest | jq -r '.tarball_url')
+  curl -L -o zlib-latest.tar.gz "$ZLIB_URL"
+
+  # Extract archive
+  tar -xzf zlib-latest.tar.gz
+
+  # Dynamically find the extracted source directory (matches madler-zlib-*)
+  ZLIB_SRC_DIR=$(find . -maxdepth 1 -type d -name "madler-zlib-*" | head -n 1)
+  if [[ -z "$ZLIB_SRC_DIR" ]]; then
+    # Fallback to any extracted directory starting with zlib or madler
+    ZLIB_SRC_DIR=$(find . -maxdepth 1 -type d ! -name "." ! -name "zlib-build" ! -name "llvm-project" ! -name "build" ! -name "build_rt" | head -n 1)
+  fi
+
+  mkdir -p zlib-build
+  cd zlib-build
+  cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_SHARED=OFF -DZLIB_BUILD_MINIZIP=OFF -DZLIB_BUILD_TESTING=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded\$<\$<CONFIG:Debug>:Debug>" "../$ZLIB_SRC_DIR"
+  cmake --build . --config Release
+  ZLIB_DIR=$(pwd)
+  cd ..
+
+  # Dynamically find the built static library (.lib)
+  ZLIB_LIB_FILE=$(find zlib-build -maxdepth 1 -name "*.lib" | head -n 1)
+
+  # Convert paths to native Windows format (C:\...) to prevent MSVC compilation failures in Git Bash
+  WIN_ZLIB_LIB=$(cygpath -w "$(pwd)/$ZLIB_LIB_FILE")
+  WIN_ZLIB_INC=$(cygpath -w "$(pwd)/$ZLIB_SRC_DIR")
+
+  CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DZLIB_LIBRARY=${WIN_ZLIB_LIB} -DZLIB_INCLUDE_DIR=${WIN_ZLIB_INC}"
+fi
+
 # -- PHASE 1: Build LLVM + LLD --
 cd build
 cmake \
@@ -172,7 +206,7 @@ if [[ -z "$LLVM_CMAKE_DIR_PATH" ]]; then
 fi
 echo "Found LLVM CMake dir at: $LLVM_CMAKE_DIR_PATH"
 
-# We need the host triple for standalone compiler-rt build. 
+# We need the host triple for standalone compiler-rt build.
 # Skip running llvm-config if cross-compiling to avoid Exec format errors.
 LLVM_LIB_DIR=$(find "$(pwd)/destdir" -name "lib" -type d | head -n 1)
 
