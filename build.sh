@@ -139,9 +139,9 @@ if [[ "$OS_TYPE" == "windows" ]]; then
   # Dynamically find the built static library (.lib)
   ZLIB_LIB_FILE=$(find zlib-build -maxdepth 1 -name "*.lib" | head -n 1)
 
-  # Convert paths to native Windows format (C:\...) to prevent MSVC compilation failures in Git Bash
-  WIN_ZLIB_LIB=$(cygpath -w "$(pwd)/$ZLIB_LIB_FILE")
-  WIN_ZLIB_INC=$(cygpath -w "$(pwd)/$ZLIB_SRC_DIR")
+  # Convert paths to mixed Windows format (C:/...) to prevent backslash escape character syntax errors in CMake config tests
+  WIN_ZLIB_LIB=$(cygpath -m "$(pwd)/$ZLIB_LIB_FILE")
+  WIN_ZLIB_INC=$(cygpath -m "$(pwd)/$ZLIB_SRC_DIR")
 
   CMAKE_ARGUMENTS="$CMAKE_ARGUMENTS -DZLIB_LIBRARY=${WIN_ZLIB_LIB} -DZLIB_INCLUDE_DIR=${WIN_ZLIB_INC}"
 fi
