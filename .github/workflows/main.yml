@@ -45,6 +45,10 @@ jobs:
             os: "windows-2022"
             tar_extra_args: "--dereference" # On Windows, symlinks require existing targets, so archives may fail. Dereferencing stores copies instead, slightly increasing size but ensuring reliable unpacking.
 
+          - id: "windows-11-arm"
+            os: "windows-11-arm"
+            tar_extra_args: "--dereference"
+
     runs-on: ${{ matrix.target.os }}
     container: ${{ matrix.target.container }}
 
@@ -121,8 +125,8 @@ jobs:
       - name: Setup MSVC (Windows)
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
-          arch: x64
-        if: matrix.target.id == 'windows-amd64'
+          arch: ${{ matrix.target.id == 'windows-11-arm' && 'arm64' || 'x64' }}
+        if: startsWith(matrix.target.id, 'windows-')
 
       - name: Build
         shell: bash

@@ -48,6 +48,16 @@ git fetch origin
 git checkout "$LLVM_REF"
 git reset --hard "$LLVM_REF"
 
+# Patch compiler-rt cpu_model ARM64 for MSVC (cl.exe) compatibility (2026-06-11 Manu)
+if [[ "$LLVM_CROSS" == "windows-11-arm" ]]; then
+    echo "Applying MSVC ARM64 compatibility patches to compiler-rt..."
+    perl -pi -e 's|#include "aarch64.h"|#include "aarch64.h"\n#ifdef _MSC_VER\n#ifndef __clang__\n#define __attribute__(x)\n#endif\n#endif|' compiler-rt/lib/builtins/cpu_model/aarch64.c
+    perl -pi -e 's|#include <stdint.h>|#include <stdint.h>\n#ifdef _MSC_VER\n#ifndef __clang__\n#define __ATOMIC_RELAXED 0\n#define __atomic_load_n(ptr, mo) (*(volatile const unsigned long long *)(ptr))\n#define __atomic_store(ptr, val_ptr, mo) (*(volatile unsigned long long *)(ptr) = *(val_ptr))\n#endif\n#endif|' compiler-rt/lib/builtins/cpu_model/aarch64/fmv/windows.inc
+    perl -pi -e 's|#include <stdint.h>|#include <stdint.h>\n#ifdef _MSC_VER\n#ifndef __clang__\n#define __attribute__(x)\n#endif\n#endif|' compiler-rt/lib/builtins/aarch64/fp_mode.c
+    perl -pi -e 's|foreach\(pat cas swp ldadd ldclr ldeor ldset\)|if(CLANG_CL OR NOT MSVC)\nforeach(pat cas swp ldadd ldclr ldeor ldset)|' compiler-rt/lib/builtins/CMakeLists.txt
+    perl -pi -e 's|endforeach\(pat\)|endforeach(pat)\nendif()|' compiler-rt/lib/builtins/CMakeLists.txt
+fi
+
 # Apply pdb-patch (Windows-only, only for non-Release builds)
 if [[ "$OS_TYPE" == "windows" && "$4" == "Debug" ]]; then
     echo "Applying PDB patch for Windows Debug build..."
