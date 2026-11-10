@@ -3,8 +3,6 @@
 set -o errexit
 set -o errtrace
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 LLVM_VERSION=$1
 LLVM_REPO_URL=${2:-https://github.com/llvm/llvm-project.git}
 LLVM_CROSS="$3"
@@ -49,17 +47,6 @@ cd llvm-project
 git fetch origin
 git checkout "$LLVM_REF"
 git reset --hard "$LLVM_REF"
-
-# Apply patches from patches directory
-if [ -d "$SCRIPT_DIR/patches" ]; then
-    echo "Applying patches from $SCRIPT_DIR/patches..."
-    for patch in "$SCRIPT_DIR/patches"/*.patch; do
-        if [ -f "$patch" ]; then
-            echo "Applying $(basename "$patch")..."
-            git apply --ignore-space-change --whitespace=nowarn "$patch"
-        fi
-    done
-fi
 
 # Patch compiler-rt cpu_model ARM64 for MSVC (cl.exe) compatibility (2026-06-11 Manu)
 if [[ "$LLVM_CROSS" == "windows-aarch64" ]]; then

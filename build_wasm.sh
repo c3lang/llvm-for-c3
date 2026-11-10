@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Configurations
 LLVM_VERSION="${1:-}"
 LLVM_REPO_URL="${2:-https://github.com/llvm/llvm-project.git}"
@@ -37,17 +35,6 @@ cd llvm-project
 git fetch origin
 git checkout "$LLVM_REF"
 git reset --hard "$LLVM_REF"
-
-# Apply patches from patches directory
-if [ -d "$SCRIPT_DIR/patches" ]; then
-  echo "Applying patches from $SCRIPT_DIR/patches..."
-  for patch in "$SCRIPT_DIR/patches"/*.patch; do
-    if [ -f "$patch" ]; then
-      echo "Applying $(basename "$patch")..."
-      git apply --ignore-space-change --whitespace=nowarn "$patch"
-    fi
-  done
-fi
 
 # 1. Build the Native Host TableGen Tool
 # We unset Emscripten variables within a subshell to ensure the host compiler is used
