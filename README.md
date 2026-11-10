@@ -35,7 +35,7 @@ These builds are configured with the following key settings:
 
 Artifacts are automatically built on every push to the `main` branch, and are published to GitHub Releases whenever a tag matching `llvm_*` is pushed.
 
-The version used is currently pinned to **LLVM 23.1.0** (`llvmorg-23.1.1` tag).
+The version used is currently pinned to **LLVM 23.1.0** (`llvmorg-23.1.5` tag).
 
 ## Attribution
 
