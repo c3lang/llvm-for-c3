@@ -169,6 +169,7 @@ cmake \
   -DLLVM_ENABLE_ZSTD=$([[ "$OS_TYPE" == "windows" || "$OS_TYPE" == "darwin" ]] && echo "OFF" || echo "FORCE_ON") \
   $(if [[ "$STATIC_BUILD" == "ON" ]]; then echo "-DZLIB_LIBRARY=/usr/lib/libz.a -DZLIB_INCLUDE_DIR=/usr/include -Dzstd_LIBRARY=/usr/lib/libzstd.a -Dzstd_INCLUDE_DIR=/usr/include"; fi) \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64;RISCV;WebAssembly;LoongArch;ARM;AVR;" \
+  -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="Xtensa" \
   -DLLVM_INCLUDE_DOCS=OFF \
   -DLLVM_BUILD_TESTS=OFF \
   -DLLVM_ENABLE_ASSERTIONS="${ENABLE_ASSERTIONS}" \
